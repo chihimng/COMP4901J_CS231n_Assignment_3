@@ -140,13 +140,13 @@ class CaptioningRNN(object):
         # forward
         h0, h0_cache = affine_forward(features, W_proj, b_proj)
         embed, embed_cache = word_embedding_forward(captions_in, W_embed)
-        hidden, hidden_cache = rnn_forward(embed, h0, Wx, Wh, b)
+        hidden, hidden_cache = rnn_forward(embed, h0, Wx, Wh, b) if self.cell_type == 'rnn' else lstm_forward(embed, h0, Wx, Wh, b)
         out, out_cache = temporal_affine_forward(hidden, W_vocab, b_vocab)
         # loss
         loss, dloss = temporal_softmax_loss(out, captions_out, mask)
         # backward
         dh, grads['W_vocab'], grads['b_vocab'] = temporal_affine_backward(dloss, out_cache)
-        dhidden, dh0, grads['Wx'], grads['Wh'], grads['b'] = rnn_backward(dh, hidden_cache)
+        dhidden, dh0, grads['Wx'], grads['Wh'], grads['b'] = rnn_backward(dh, hidden_cache) if self.cell_type == 'rnn' else lstm_backward(dh, hidden_cache)
         grads['W_embed'] = word_embedding_backward(dhidden, embed_cache)
         _, grads['W_proj'], grads['b_proj'] = affine_backward(dh0, h0_cache)
         ############################################################################
@@ -211,11 +211,16 @@ class CaptioningRNN(object):
         # a loop.                                                                 #
         ###########################################################################
         prev_h, _ = affine_forward(features, W_proj, b_proj)
+        if self.cell_type == 'lstm':
+          prev_c, _ = affine_forward(features, W_proj, b_proj)
         captions[:, 0] = self._start
         word = np.ones((N, 1), dtype=np.int32) * self._start
         for t in range(max_length):
           embed, _ = word_embedding_forward(word, W_embed)
-          h, _ = rnn_step_forward(np.squeeze(embed), prev_h, Wx, Wh, b)
+          if self.cell_type == 'rnn':
+            h, _ = rnn_step_forward(np.squeeze(embed), prev_h, Wx, Wh, b)
+          if self.cell_type == 'lstm':
+            h, prev_c, _ = lstm_step_forward(np.squeeze(embed), prev_h, prev_c, Wx, Wh,b)
           scores, _ = temporal_affine_forward(h[:, np.newaxis, :], W_vocab, b_vocab)
           captions[:, t] = np.squeeze(np.argmax(scores, axis=2))
           word = captions[:, t]
